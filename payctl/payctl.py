@@ -81,6 +81,9 @@ def cmd_pay(args, config):
         unclaimed=True
     )
 
+    if len(eras_paymemt_info) < int(get_config(args, config, 'mineras')):
+        return
+
     keypair = get_keypair(args, config)
 
     payout_calls = []
