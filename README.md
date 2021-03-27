@@ -16,8 +16,11 @@ Clone the repository and install the package:
 
 ```
 git clone http://github.com/stakelink/substrate-payctl
-pip install substrate-payctl
+pip install substrate-payctl/
 ```
+
+NOTE: pip install argument is ambiguous at it can refer to a python package or a local folder. Make sure to include the '/' at the end to avoid ambiguity.
+
 
 ## Usage
 
