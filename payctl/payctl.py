@@ -30,8 +30,11 @@ def cmd_list(args, config):
 
     #depth = min(history_depth.value, int(config['Defaults'].get('eradepth')))
 
+    start = current_era - depth
+    end = current_era
+
     eras_paymemt_info = get_eras_payment_info_filtered(
-        substrate, current_era - depth, current_era,
+        substrate, start, end,
         accounts=get_included_accounts(substrate, args, config),
         unclaimed=args.unclaimed
     )
@@ -72,7 +75,7 @@ def cmd_pay(args, config):
 
     depth = int(get_config(args, config, 'deptheras'))
     if depth is None:
-        depth = 84
+        depth = 82
     #depth = min(history_depth.value, int(config['Defaults'].get('eradepth')))
 
     eras_paymemt_info = get_eras_payment_info_filtered(

@@ -22,17 +22,20 @@ def get_eras_rewards_point(substrate, start, end):
 
     for era in range(start, end):
         reward_points = substrate.query(
-        module='Staking',
-        storage_function='ErasRewardPoints',
-        params=[era]
+            module='Staking',
+            storage_function='ErasRewardPoints',
+            params=[era]
         )
 
-        eras_rewards_point[era] = {}
-        eras_rewards_point[era]['total'] = reward_points.value['total']
-        eras_rewards_point[era]['individual'] = {}
+        try:
+            eras_rewards_point[era] = {}
+            eras_rewards_point[era]['total'] = reward_points.value['total']
+            eras_rewards_point[era]['individual'] = {}
 
-        for reward_points_item in reward_points.value['individual']:
-            eras_rewards_point[era]['individual'][reward_points_item['col1']] = reward_points_item['col2']
+            for reward_points_item in reward_points.value['individual']:
+                eras_rewards_point[era]['individual'][reward_points_item['col1']] = reward_points_item['col2']
+        except:
+            continue
 
     return eras_rewards_point
 
@@ -50,7 +53,10 @@ def get_eras_validator_rewards(substrate, start, end):
             params=[era]
         )
 
-        eras_validator_rewards[era] = validator_rewards.value
+        try:
+            eras_validator_rewards[era] = validator_rewards.value
+        except:
+            continue
 
     return eras_validator_rewards
 
@@ -64,7 +70,7 @@ def get_eras_payment_info(substrate, start, end):
     eras_validator_rewards = get_eras_validator_rewards(substrate, start, end)
 
     eras_payment_info = {}
-    for era in range(start, end):
+    for era in list(set(eras_rewards_point.keys()) & set(eras_validator_rewards.keys())):
         total_points = eras_rewards_point[era]['total']
 
         for validatorId in eras_rewards_point[era]['individual']:
@@ -137,19 +143,22 @@ def get_accounts_ledger(substrate, accounts):
     accounts_ledger = {}
 
     for account in accounts:
-        controller_account = substrate.query(
-            module='Staking',
-            storage_function='Bonded',
-            params=[accounts[0]]
-        )
+        try:
+            controller_account = substrate.query(
+                module='Staking',
+                storage_function='Bonded',
+                params=[accounts[0]]
+            )
 
-        ledger = substrate.query(
-            module='Staking',
-            storage_function='Ledger',
-            params=[controller_account.value]
-        )
+            ledger = substrate.query(
+                module='Staking',
+                storage_function='Ledger',
+                params=[controller_account.value]
+            )
 
-        accounts_ledger[account] = ledger.value
+            accounts_ledger[account] = ledger.value
+        except:
+            continue
 
     return accounts_ledger
 
