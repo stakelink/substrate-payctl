@@ -22,7 +22,7 @@ def cmd_list(args, config):
     storage_function='HistoryDepth'
     )
 
-    current_era = current_era.value - 1
+    current_era = current_era.value
 
     depth = int(get_config(args, config, 'deptheras'))
     if depth is None:
@@ -71,7 +71,7 @@ def cmd_pay(args, config):
         storage_function='HistoryDepth'
     )
 
-    current_era = current_era.value - 1
+    current_era = current_era.value
 
     depth = int(get_config(args, config, 'deptheras'))
     if depth is None:
