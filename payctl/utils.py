@@ -33,7 +33,7 @@ def get_eras_rewards_point(substrate, start, end):
             eras_rewards_point[era]['individual'] = {}
 
             for reward_points_item in reward_points.value['individual']:
-                eras_rewards_point[era]['individual'][reward_points_item['col1']] = reward_points_item['col2']
+                eras_rewards_point[era]['individual'][reward_points_item[0]] = reward_points_item[1]
         except:
             continue
 
@@ -75,7 +75,9 @@ def get_eras_payment_info(substrate, start, end):
 
         for validatorId in eras_rewards_point[era]['individual']:
             total_reward = eras_validator_rewards[era]
-            eras_rewards_point[era]['individual'][validatorId] *= (total_reward/total_points)
+
+            if total_reward is not None:
+                eras_rewards_point[era]['individual'][validatorId] *= (total_reward/total_points)
 
         eras_payment_info[era] = eras_rewards_point[era]['individual']
 
@@ -115,7 +117,7 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], unclaimed
                 eras_paymemt_info_filtered[era][accountId]['claimed'] = claimed
                 eras_paymemt_info_filtered[era][accountId]['amount'] = amount
 
-    return(eras_paymemt_info_filtered)
+    return eras_paymemt_info_filtered
 
 
 #
@@ -126,14 +128,14 @@ def get_included_accounts(substrate, args, config):
 
     if len(args.validators) != 0:
         for validator in args.validators:
-            included_accounts.append('0x' + ss58_decode(validator, valid_ss58_format=substrate.ss58_format))
+            included_accounts.append(validator)
     else:
         for section in config.sections():
             if section == 'Defaults':
                 continue
-            included_accounts.append('0x' + ss58_decode(section, valid_ss58_format=substrate.ss58_format))
+            included_accounts.append(section)
 
-    return(included_accounts)
+    return included_accounts
 
 
 #

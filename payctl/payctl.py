@@ -41,14 +41,13 @@ def cmd_list(args, config):
 
     for era in eras_paymemt_info:
         print("Era: %s" % era)
-        for accountId in eras_paymemt_info[era]:
-            if eras_paymemt_info[era][accountId]['claimed'] is True:
+        for account in eras_paymemt_info[era]:
+            if eras_paymemt_info[era][account]['claimed'] is True:
                 msg = "claimed"
             else:
                 msg = "unclaimed"
 
-            account = ss58_encode(accountId, ss58_format=substrate.ss58_format)
-            amount = eras_paymemt_info[era][accountId]['amount']
+            amount = eras_paymemt_info[era][account]['amount']
 
             print("\t %s => %s %s  (%s)" % (account, amount, substrate.token_symbol, msg))
 
@@ -98,7 +97,7 @@ def cmd_pay(args, config):
                 'call_args': {
                     'validator_stash': accountId,
                     'era': era,
-                }                
+                }
             })
 
 
@@ -146,7 +145,7 @@ def main():
     args_subparser_list = args_subparsers.add_parser("list", help="list rewards")
     args_subparser_list.add_argument("-u", "--unclaimed", help='show unclaimed only', action='store_true', default=False)
     args_subparser_list.add_argument("validators", nargs='*', help="", default=None)
-    
+
     args_subparser_pay = args_subparsers.add_parser('pay', help="pay rewards")
     args_subparser_pay.add_argument("validators", nargs='*', help="", default=None)
     args_subparser_pay.add_argument("-m", "--min-eras", dest="mineras", help="minum eras pending to pay to proceed payment")

@@ -17,7 +17,7 @@ REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
 LICENSE = 'MIT'
 REQUIRED = [
-    'substrate-interface>=0.11'
+    'substrate-interface>=0.13'
 ]
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -54,7 +54,7 @@ setup(
     data_files=[('etc/payctl', ['default.conf'])],
     install_requires=REQUIRED,
     license=LICENSE,
-    project_urls={ 
+    project_urls={
         'Bug Reports': 'https://github.com/stakelink/substrate-payctl/issues',
         'Source': 'https://github.com/stakelink/substrate-payctl',
     },
