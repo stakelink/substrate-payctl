@@ -33,7 +33,7 @@ def get_eras_rewards_point(substrate, start, end):
             eras_rewards_point[era]['individual'] = {}
 
             for reward_points_item in reward_points.value['individual']:
-                eras_rewards_point[era]['individual'][reward_points_item['col1']] = reward_points_item['col2']
+                eras_rewards_point[era]['individual'][reward_points_item[0]] = reward_points_item[1]
         except:
             continue
 
@@ -70,7 +70,11 @@ def get_eras_payment_info(substrate, start, end):
     eras_validator_rewards = get_eras_validator_rewards(substrate, start, end)
 
     eras_payment_info = {}
-    for era in list(set(eras_rewards_point.keys()) & set(eras_validator_rewards.keys())):
+
+    # era indexes with rewards points and validator rewards
+    eras = list(set(eras_rewards_point.keys()) & set(eras_validator_rewards.keys()))
+
+    for era in eras:
         total_points = eras_rewards_point[era]['total']
 
         for validatorId in eras_rewards_point[era]['individual']:
@@ -89,28 +93,30 @@ def get_eras_payment_info(substrate, start, end):
 #                                  NOTE: The returned structure is slighly different than
 #                                        get_eras_payment_info
 #
-def get_eras_payment_info_filtered(substrate, start, end, accounts=[], unclaimed=False):
+def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_unclaimed=False):
     eras_paymemt_info_filtered = {}
 
-    eras_paymemt_info = get_eras_payment_info(substrate, start, end)
+    eras_payment_info = get_eras_payment_info(substrate, start, end)
     accounts_ledger = get_accounts_ledger(substrate, accounts)
 
-    for era in eras_paymemt_info:
+    for era in eras_payment_info:
         for accountId in accounts:
-            if accountId in eras_paymemt_info[era]:
+            if accountId in eras_payment_info[era]:
                 if era in accounts_ledger[accountId]['claimedRewards']:
-                    if unclaimed == True:
-                        continue
                     claimed = True
                 else:
                     claimed = False
+
+                # if we only want the unclaimed rewards, skip
+                if claimed and only_unclaimed:
+                    continue
 
                 if era not in eras_paymemt_info_filtered:
                     eras_paymemt_info_filtered[era] = {}
 
                 eras_paymemt_info_filtered[era][accountId] = {}
 
-                amount = eras_paymemt_info[era][accountId] / (10**substrate.token_decimals)
+                amount = eras_payment_info[era][accountId] / (10**substrate.token_decimals)
 
                 eras_paymemt_info_filtered[era][accountId]['claimed'] = claimed
                 eras_paymemt_info_filtered[era][accountId]['amount'] = amount
@@ -119,21 +125,14 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], unclaimed
 
 
 #
-# get_included_accounts - Get the list (for the filtering) of included accounts from the args and config.
+# get_included_accounts - Get the list (for the filtering) of included accounts from the args or config.
 #
-def get_included_accounts(substrate, args, config):
-    included_accounts = []
-
+def get_included_accounts(args, config):
     if len(args.validators) != 0:
-        for validator in args.validators:
-            included_accounts.append('0x' + ss58_decode(validator, valid_ss58_format=substrate.ss58_format))
-    else:
-        for section in config.sections():
-            if section == 'Defaults':
-                continue
-            included_accounts.append('0x' + ss58_decode(section, valid_ss58_format=substrate.ss58_format))
+        return [validator for validator in args.validators]
 
-    return(included_accounts)
+    return [section for section in config.sections() if section != "Defaults"]
+
 
 
 #

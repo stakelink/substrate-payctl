@@ -1,5 +1,6 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from configparser import ConfigParser
+from collections import OrderedDict
 
 from .utils import *
 
@@ -13,44 +14,32 @@ def cmd_list(args, config):
         type_registry_preset=get_config(args, config, 'network')
     )
 
-    current_era = substrate.query(
-    module='Staking',
-    storage_function='CurrentEra'
+    active_era = substrate.query(
+        module='Staking',
+        storage_function='ActiveEra'
     )
-    history_depth = substrate.query(
-    module='Staking',
-    storage_function='HistoryDepth'
-    )
+    active_era = active_era.value['index']
 
-    current_era = current_era.value
+    depth = get_config(args, config, 'deptheras')
+    depth = int(depth) if depth is not None else 84
 
-    depth = int(get_config(args, config, 'deptheras'))
-    if depth is None:
-        depth = 84
+    start = active_era - depth
+    end = active_era
 
-    #depth = min(history_depth.value, int(config['Defaults'].get('eradepth')))
-
-    start = current_era - depth
-    end = current_era
-
-    eras_paymemt_info = get_eras_payment_info_filtered(
+    eras_payment_info = get_eras_payment_info_filtered(
         substrate, start, end,
-        accounts=get_included_accounts(substrate, args, config),
-        unclaimed=args.unclaimed
+        accounts=get_included_accounts(args, config),
+        only_unclaimed=args.only_unclaimed
     )
+    eras_payment_info = OrderedDict(sorted(eras_payment_info.items(), reverse=True))
 
-    for era in eras_paymemt_info:
-        print("Era: %s" % era)
-        for accountId in eras_paymemt_info[era]:
-            if eras_paymemt_info[era][accountId]['claimed'] is True:
-                msg = "claimed"
-            else:
-                msg = "unclaimed"
+    for era_index, era in eras_payment_info.items():
+        print(f"Era: {era_index}")
+        for accountId in era:
+            msg = "claimed" if era[accountId]['claimed'] else "unclaimed"
+            amount = "{:.{}f}".format(era[accountId]['amount'], substrate.token_decimals)
 
-            account = ss58_encode(accountId, ss58_format=substrate.ss58_format)
-            amount = eras_paymemt_info[era][accountId]['amount']
-
-            print("\t %s => %s %s  (%s)" % (account, amount, substrate.token_symbol, msg))
+            print(f"\t {accountId} => {amount} {substrate.token_symbol} ({msg})")
 
 
 #
@@ -78,20 +67,20 @@ def cmd_pay(args, config):
         depth = 82
     #depth = min(history_depth.value, int(config['Defaults'].get('eradepth')))
 
-    eras_paymemt_info = get_eras_payment_info_filtered(
+    eras_payment_info = get_eras_payment_info_filtered(
         substrate, current_era - depth, current_era,
-        accounts=get_included_accounts(substrate, args, config),
+        accounts=get_included_accounts(args, config),
         unclaimed=True
     )
 
-    if len(eras_paymemt_info) < int(get_config(args, config, 'mineras')):
+    if len(eras_payment_info) < int(get_config(args, config, 'mineras')):
         return
 
     keypair = get_keypair(args, config)
 
     payout_calls = []
-    for era in eras_paymemt_info:
-        for accountId in eras_paymemt_info[era]:
+    for era in eras_payment_info:
+        for accountId in eras_payment_info[era]:
             payout_calls.append({
                 'call_module': 'Staking',
                 'call_function': 'payout_stakers',
@@ -144,7 +133,7 @@ def main():
     args_subparsers = args_parser.add_subparsers(title="Commands", help='', dest="command")
 
     args_subparser_list = args_subparsers.add_parser("list", help="list rewards")
-    args_subparser_list.add_argument("-u", "--unclaimed", help='show unclaimed only', action='store_true', default=False)
+    args_subparser_list.add_argument("-u", "--unclaimed", dest="only_unclaimed", help='show unclaimed only', action='store_true', default=False)
     args_subparser_list.add_argument("validators", nargs='*', help="", default=None)
     
     args_subparser_pay = args_subparsers.add_parser('pay', help="pay rewards")
