@@ -94,7 +94,7 @@ def get_eras_payment_info(substrate, start, end):
 #                                        get_eras_payment_info
 #
 def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_unclaimed=False):
-    eras_paymemt_info_filtered = {}
+    eras_payment_info_filtered = {}
 
     eras_payment_info = get_eras_payment_info(substrate, start, end)
     accounts_ledger = get_accounts_ledger(substrate, accounts)
@@ -111,17 +111,17 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_uncl
                 if claimed and only_unclaimed:
                     continue
 
-                if era not in eras_paymemt_info_filtered:
-                    eras_paymemt_info_filtered[era] = {}
+                if era not in eras_payment_info_filtered:
+                    eras_payment_info_filtered[era] = {}
 
-                eras_paymemt_info_filtered[era][accountId] = {}
+                eras_payment_info_filtered[era][accountId] = {}
 
                 amount = eras_payment_info[era][accountId] / (10**substrate.token_decimals)
 
-                eras_paymemt_info_filtered[era][accountId]['claimed'] = claimed
-                eras_paymemt_info_filtered[era][accountId]['amount'] = amount
+                eras_payment_info_filtered[era][accountId]['claimed'] = claimed
+                eras_payment_info_filtered[era][accountId]['amount'] = amount
 
-    return(eras_paymemt_info_filtered)
+    return eras_payment_info_filtered
 
 
 #
