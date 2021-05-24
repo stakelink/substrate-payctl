@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import io
 import os
-import sys
-from shutil import rmtree
-
-from setuptools import find_packages, setup, Command
+from setuptools import setup
 
 NAME = 'payctl'
 DESCRIPTION = 'Simple command line application to control the payouts of Substrate validators (Polkadot and Kusama among others).'

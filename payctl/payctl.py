@@ -1,6 +1,7 @@
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
+from argparse import ArgumentParser
 from configparser import ConfigParser
 from collections import OrderedDict
+from substrateinterface import SubstrateInterface
 
 from .utils import *
 
