@@ -283,3 +283,21 @@ def get_ss58_address_format(network):
     if network == "social-network": return 252
         
     return 42
+
+#
+# get_type_preset - Gets the type preset for the network
+# 
+def get_type_preset(network):
+    supported_networks = [
+        "polkadot",
+        "kusama",
+        "rococo",
+        "westend",
+        "statemine",
+        "statemint",
+    ]
+
+    if network in supported_networks:
+        return network
+    else:
+        return "default"
