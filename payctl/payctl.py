@@ -49,7 +49,7 @@ def cmd_list(args, config):
 def cmd_pay(args, config):
     substrate = SubstrateInterface(
         url=get_config(args, config, 'rpcurl'),
-        type_registry_preset=get_config(args, config, 'network')
+        type_registry_preset=get_type_preset(get_config(args, config, 'network'))
     )
 
     active_era = substrate.query(
