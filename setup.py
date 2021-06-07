@@ -13,7 +13,8 @@ REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
 LICENSE = 'MIT'
 REQUIRED = [
-    'substrate-interface>=0.13.3'
+    'substrate-interface>=0.13.3',
+    'substrate-utils @ git+git://github.com/stakelink/substrate-utils@0.1.0#egg=substrate-utils'
 ]
 
 here = os.path.abspath(os.path.dirname(__file__))

@@ -1,175 +1,128 @@
 from substrateinterface import Keypair
+from substrateutils import SubstrateUtils
+from copy import copy
 
 #
-# get_config - Get a default and validator specific config elements from args and config.
+# get_entries -
 #
-def get_config(args, config, key, section='Defaults'):
-    if vars(args).get(key) is not None:
-        return vars(args)[key]
+def get_entries(args, config):
+    entries = []
 
-    if config[section].get(key) is not None:
-        return config[section].get(key)
+    vargs = vars(args)
 
-    return config['Defaults'].get(key)
+    for section in config:
+        if section == 'DEFAULT':
+            continue
+
+        entry = {}
+        for k in config[section].keys():
+            entry[k] = config[section].get(k)
+
+        for k in vargs:
+            if vargs[k] is not None:
+                entry[k] = vargs[k]            
+
+        entry['validator'] = section
+        del entry['config']
+        del entry['command']
+
+        entries.append(entry)
+
+    return entries
 
 
 #
-# get_eras_rewards_point - Collect the ErasRewardPoints (total and invididual) for a given range of eras.
+# get_networks -
 #
-def get_eras_rewards_point(substrate, start, end):
-    eras_rewards_point = {}
+def get_networks(entries):
+    networks = {}
 
-    for era in range(start, end):
-        reward_points = substrate.query(
-            module='Staking',
-            storage_function='ErasRewardPoints',
-            params=[era]
+    for entry in entries:
+        if (entry['network'],entry['rpcurl']) not in networks:
+            networks[(entry['network'],entry['rpcurl'])] = {}
+            networks[(entry['network'],entry['rpcurl'])]['deptheras'] = entry['deptheras']
+        else:
+            if entry['mineras'] > networks[(entry['network'],entry['rpcurl'])]['deptheras']:
+                networks[(entry['network'],entry['rpcurl'])]['deptheras'] = entry['deptheras']
+
+    return networks
+
+
+def get_batches(entries):
+    batches = {}
+
+    for entry in entries:
+        if len(entry['rewards']) > 0 and len(entry['unclaimed_eras']) > int(entry['mineras']):
+            batch_key = (entry['network'], entry['rpcurl'], entry['keypair'].ss58_address)
+            if batch_key not in batches.keys():
+                batches[batch_key] = {
+                    'payouts': []
+                }
+            batches[batch_key]['payouts'].append(entry)
+            batches[batch_key]['api'] = entry['network_data']['api']
+            batches[batch_key]['signingaccount'] = entry['signingaccount']
+            batches[batch_key]['keypair'] = entry['keypair']
+
+    return batches
+
+
+
+#
+# get_rewards -
+#
+def enrich_rewards(entries):
+    networks = get_networks(entries)
+    
+    for k in networks:
+        network = networks[k]
+        s = SubstrateUtils(
+            type_registry_preset=get_type_preset(k[0]),
+            url=k[1],
+            cache_ttl = 3600,
+            cache_storage = 'data.cache',
+            cache_storage_sync_timer=30,
         )
 
-        try:
-            eras_rewards_point[era] = {}
-            eras_rewards_point[era]['total'] = reward_points.value['total']
-            eras_rewards_point[era]['individual'] = {}
+        activeEra = s.Query('Staking', 'ActiveEra')['index']
+        filters={'eras': range(activeEra - int(network['deptheras']), activeEra)}
 
-            for reward_points_item in reward_points.value['individual']:
-                eras_rewards_point[era]['individual'][reward_points_item[0]] = reward_points_item[1]
-        except:
-            continue
+        network['erasinfo'] = s.ErasInfo(filters)
+        network['api'] = s
+        network['activeera'] = activeEra
 
-    return eras_rewards_point
+    for entry in entries:
+        entry['network_data'] = networks[(entry['network'], entry['rpcurl'])]
+        entry['rewards'] = {}
+        entry['unclaimed_eras'] = []
+        for era in range(activeEra - int(entry['deptheras']), activeEra):
+            if entry['validator'] in entry['network_data']['erasinfo'][era]['validators']:
+                v = entry['network_data']['erasinfo'][era]['validators'][entry['validator']]
+                entry['rewards'][era] = v['rewards']
+                if entry['rewards'][era]['claimed'] is False:
+                    entry['unclaimed_eras'].append(era)
 
-
-#
-# get_eras_validator_rewards - Collect the ErasValidatorReward for a given range of eras.
-#
-def get_eras_validator_rewards(substrate, start, end):
-    eras_validator_rewards = {}
-
-    for era in range(start, end):
-        validator_rewards = substrate.query(
-            module='Staking',
-            storage_function='ErasValidatorReward',
-            params=[era]
-        )
-
-        try:
-            eras_validator_rewards[era] = validator_rewards.value
-        except:
-            continue
-
-    return eras_validator_rewards
+    return entries
 
 
 #
-# get_eras_payment_info - Combine information from ErasRewardPoints and ErasValidatorReward for given
-#                         range of eras to repor the amount of per validator instead of era points.
+# enrich_keypair -
 #
-def get_eras_payment_info(substrate, start, end):
-    eras_rewards_point = get_eras_rewards_point(substrate, start, end)
-    eras_validator_rewards = get_eras_validator_rewards(substrate, start, end)
+def enrich_keypair(entries):
+    for entry in entries:
+        entry['keypair'] = get_keypair(entry)
+    return entries
 
-    eras_payment_info = {}
-
-    # era indexes with rewards points and validator rewards
-    eras = list(set(eras_rewards_point.keys()) & set(eras_validator_rewards.keys()))
-
-    for era in eras:
-        total_points = eras_rewards_point[era]['total']
-
-        for validatorId in eras_rewards_point[era]['individual']:
-            total_reward = eras_validator_rewards[era]
-            eras_rewards_point[era]['individual'][validatorId] *= (total_reward/total_points)
-
-        eras_payment_info[era] = eras_rewards_point[era]['individual']
-
-    return eras_payment_info
-
-#
-# get_eras_payment_info_filtered - Similar than get_eras_payment_info but applying some filters;
-#                                  1 . Include only eras containing given acconts.
-#                                  2 . Include only eras containing unclaimed rewards.
-#
-#                                  NOTE: The returned structure is slighly different than
-#                                        get_eras_payment_info
-#
-def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_unclaimed=False):
-    eras_payment_info_filtered = {}
-
-    eras_payment_info = get_eras_payment_info(substrate, start, end)
-    accounts_ledger = get_accounts_ledger(substrate, accounts)
-
-    for era in eras_payment_info:
-        for accountId in accounts:
-            if accountId in eras_payment_info[era]:
-                if era in accounts_ledger[accountId]['claimedRewards']:
-                    claimed = True
-                else:
-                    claimed = False
-
-                # if we only want the unclaimed rewards, skip
-                if claimed and only_unclaimed:
-                    continue
-
-                if era not in eras_payment_info_filtered:
-                    eras_payment_info_filtered[era] = {}
-
-                eras_payment_info_filtered[era][accountId] = {}
-
-                amount = eras_payment_info[era][accountId] / (10**substrate.token_decimals)
-
-                eras_payment_info_filtered[era][accountId]['claimed'] = claimed
-                eras_payment_info_filtered[era][accountId]['amount'] = amount
-
-    return eras_payment_info_filtered
-
-
-#
-# get_included_accounts - Get the list (for the filtering) of included accounts from the args or config.
-#
-def get_included_accounts(args, config):
-    if len(args.validators) != 0:
-        return [validator for validator in args.validators]
-
-    return [section for section in config.sections() if section != "Defaults"]
-
-
-
-#
-# get_accounts_ledger - Collect the Ledger for a given list of accounts.
-#
-def get_accounts_ledger(substrate, accounts):
-    accounts_ledger = {}
-
-    for account in accounts:
-        try:
-            controller_account = substrate.query(
-                module='Staking',
-                storage_function='Bonded',
-                params=[accounts[0]]
-            )
-
-            ledger = substrate.query(
-                module='Staking',
-                storage_function='Ledger',
-                params=[controller_account.value]
-            )
-
-            accounts_ledger[account] = ledger.value
-        except:
-            continue
-
-    return accounts_ledger
 
 
 #
 # get_keypair - Generate a Keypair from args and config.
 #
-def get_keypair(args, config):
-    signingseed = get_config(args, config, 'signingseed')
-    signingmnemonic = get_config(args, config, 'signingmnemonic')
-    signinguri = get_config(args, config, 'signinguri')
+def get_keypair(entry):
+    signingseed = entry['signingseed'] if 'signingseed' in entry.keys() else None
+    signingmnemonic = entry['signingmnemonic'] if 'signingmnemonic' in entry.keys() else None
+    signinguri = entry['signinguri'] if 'signinguri' in entry.keys() else None
     
-    ss58_format = get_ss58_address_format(get_config(args, config, 'network'))
+    ss58_format = get_ss58_address_format(entry['network'])
 
     if signingseed is not None:
         keypair = Keypair.create_from_seed(signingseed, ss58_format)
@@ -213,12 +166,12 @@ def get_existential_deposit(substrate):
 #
 # format_balance_to_symbol - Formats a balance in the base decimals of the chain
 #
-def format_balance_to_symbol(substrate, amount, amount_decimals=0):
-    formatted = amount / 10 ** (substrate.token_decimals - amount_decimals)
-    formatted = "{:.{}f}".format(formatted, substrate.token_decimals)
+def format_balance_to_symbol(amount, show_decimals=0, token_decimals=0, token_symbol=""):
+    formatted = amount / 10 ** token_decimals
+    formatted = "{:.{}f}".format(formatted, show_decimals)
 
     # expected format -> 5.780520362127 KSM
-    return f"{formatted} {substrate.token_symbol}"
+    return f"{formatted} {token_symbol}"
 
 
 #

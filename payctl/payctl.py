@@ -5,174 +5,132 @@ from substrateinterface import SubstrateInterface
 
 from .utils import *
 
-
 #
 # cmd_list - 'list' subcommand handler.
 #
-def cmd_list(args, config):
-    substrate = SubstrateInterface(
-        url=get_config(args, config, 'rpcurl'),
-        type_registry_preset=get_type_preset(get_config(args, config, 'network'))
-    )
+def cmd_list(entries):
+    entries = enrich_rewards(entries)
 
-    active_era = substrate.query(
-        module='Staking',
-        storage_function='ActiveEra'
-    )
-    active_era = active_era.value['index']
+    for entry in entries:
+        print(entry['validator'])
 
-    depth = get_config(args, config, 'deptheras')
-    depth = int(depth) if depth is not None else 84
+        if len(entry['rewards']) > 0:
+            for era in entry['rewards'].keys():
+                v = entry['network_data']['erasinfo'][era]['validators'][entry['validator']]
+                s = entry['network_data']['api']
 
-    start = active_era - depth
-    end = active_era
+                # TODO: move to substrateutils
+                formatted_amount = format_balance_to_symbol(v['rewards']['amount'], 3, s.token_decimals, s.token_symbol)
+                msg = "claimed" if v['rewards']['claimed'] else "unclaimed"
+                
+                print(f"\t- {era} => {formatted_amount} ({msg})")
+        else:
+            print(f"\t- Not an active validator")
 
-    eras_payment_info = get_eras_payment_info_filtered(
-        substrate, start, end,
-        accounts=get_included_accounts(args, config),
-        only_unclaimed=args.only_unclaimed
-    )
-    eras_payment_info = OrderedDict(sorted(eras_payment_info.items(), reverse=True))
-
-    for era_index, era in eras_payment_info.items():
-        print(f"Era: {era_index}")
-        for accountId in era:
-            msg = "claimed" if era[accountId]['claimed'] else "unclaimed"
-            formatted_amount = format_balance_to_symbol(substrate, era[accountId]['amount'], substrate.token_decimals)
-
-            print(f"\t {accountId} => {formatted_amount} ({msg})")
+    return
 
 
 #
 # cmd_pay - 'pay' subcommand handler.
 #
-def cmd_pay(args, config):
-    substrate = SubstrateInterface(
-        url=get_config(args, config, 'rpcurl'),
-        type_registry_preset=get_config(args, config, 'network')
-    )
+def cmd_pay(entries):
+    entries = enrich_rewards(entries)
+    entries = enrich_keypair(entries)
+    batches = get_batches(entries)
 
-    active_era = substrate.query(
-        module='Staking',
-        storage_function='ActiveEra'
-    )
-    active_era = active_era.value['index']
+    for k in batches:
+        payout_calls = []
+        for i in batches[k]['payouts']:
+            s = batches[k]['api']
 
-    depth = get_config(args, config, 'deptheras')
-    depth = int(depth) if depth is not None else 84
+            for era in i['unclaimed_eras']:
+                payout_calls.append({
+                    'call_module': 'Staking',
+                    'call_function': 'payout_stakers',
+                    'call_args': {
+                        'validator_stash': i['validator'],
+                        'era': era,
+                    }                
+                })
+        if len(payout_calls) > 0:
+            call = s.compose_call(
+                call_module='Utility',
+                call_function='batch',
+                call_params={
+                    'calls': payout_calls
+                }
+            )
 
-    minEras = get_config(args, config, 'mineras')
-    minEras = int(minEras) if minEras is not None else 5
+            payment_info = s.get_payment_info(call=call, keypair=batches[k]['keypair'])
 
-    start = active_era - depth
-    end = active_era
+            # TODO: move to substrateutils.
+            account_info = get_account_info(s, batches[k]['signingaccount'])
+            expected_fees = payment_info['partialFee']
+            free_balance = account_info['data']['free']
+            existential_deposit = get_existential_deposit(s)
 
-    eras_payment_info = get_eras_payment_info_filtered(
-        substrate, start, end,
-        accounts=get_included_accounts(args, config),
-        only_unclaimed=True
-    )
-    eras_payment_info = OrderedDict(sorted(eras_payment_info.items(), reverse=True))
+            if (free_balance - expected_fees) < existential_deposit:
+                print(f"Account with not enough funds. Needed {existential_deposit + expected_fees}, but got {free_balance}")
+                continue
 
-    if len(eras_payment_info.keys()) == 0:
-        print(f"There are no rewards to claim in the last {depth} era(s)")
-        return
 
-    if len(eras_payment_info.keys()) < minEras:
-        print(
-            f"There are rewards to claim on {len(eras_payment_info.keys())} era(s), " + 
-            f"but those are not enough to reach the minimum threshold ({minEras})"
-        )
-        return
+            signature_payload = s.generate_signature_payload(
+                call=call,
+                nonce=account_info['nonce']
+            )
+            signature = batches[k]['keypair'].sign(signature_payload)
 
-    keypair = get_keypair(args, config)
+            extrinsic = s.create_signed_extrinsic(
+                call=call,
+                keypair=batches[k]['keypair'],
+                nonce=account_info['nonce'],
+                signature=signature
+            )
+    
+            extrinsic_receipt = s.submit_extrinsic(
+                extrinsic=extrinsic,
+                wait_for_inclusion=True
+            )
 
-    payout_calls = []
-    for era in eras_payment_info:
-        for accountId in eras_payment_info[era]:
-            payout_calls.append({
-                'call_module': 'Staking',
-                'call_function': 'payout_stakers',
-                'call_args': {
-                    'validator_stash': accountId,
-                    'era': era,
-                }                
-            })
+            fees = extrinsic_receipt.total_fee_amount
 
-    call = substrate.compose_call(
-        call_module='Utility',
-        call_function='batch',
-        call_params={
-            'calls': payout_calls
-        }
-    )
+            print(f"\t Extrinsic hash: {extrinsic_receipt.extrinsic_hash}")
+            print(f"\t Block hash: {extrinsic_receipt.block_hash}")
+            #print(f"\t Fee: {format_balance_to_symbol(s, fees)} ({fees})")
+            print(f"\t Status: {'ok' if extrinsic_receipt.is_success else 'error'}")
+            if not extrinsic_receipt.is_success:
+                print(f"\t Error message: {extrinsic_receipt.error_message.get('docs')}")     
 
-    payment_info = substrate.get_payment_info(call=call, keypair=keypair)
-    account_info = get_account_info(substrate, get_config(args, config, 'signingaccount'))
+    return
 
-    expected_fees = payment_info['partialFee']
-    free_balance = account_info['data']['free']
-    existential_deposit = get_existential_deposit(substrate)
-
-    if (free_balance - expected_fees) < existential_deposit:
-        print(f"Account with not enough funds. Needed {existential_deposit + expected_fees}, but got {free_balance}")
-        return
-
-    signature_payload = substrate.generate_signature_payload(
-        call=call,
-        nonce=account_info['nonce']
-    )
-    signature = keypair.sign(signature_payload)
-
-    extrinsic = substrate.create_signed_extrinsic(
-        call=call,
-        keypair=keypair,
-        nonce=account_info['nonce'],
-        signature=signature
-    )
-
-    print(
-        "Submitting batch extrinsic to claim " + 
-        f"{len(payout_calls)} rewards (in {len(eras_payment_info)} eras)"
-    )
-
-    extrinsic_receipt = substrate.submit_extrinsic(
-        extrinsic=extrinsic,
-        wait_for_inclusion=True
-    )
-
-    fees = extrinsic_receipt.total_fee_amount
-
-    print(f"\t Extrinsic hash: {extrinsic_receipt.extrinsic_hash}")
-    print(f"\t Block hash: {extrinsic_receipt.block_hash}")
-    print(f"\t Fee: {format_balance_to_symbol(substrate, fees)} ({fees})")
-    print(f"\t Status: {'ok' if extrinsic_receipt.is_success else 'error'}")
-    if not extrinsic_receipt.is_success:
-        print(f"\t Error message: {extrinsic_receipt.error_message.get('docs')}")
 
 def main():
     args_parser = ArgumentParser(prog='payctl')
     args_parser.add_argument("-c", "--config", help="read config from a file", default="/usr/local/etc/payctl/default.conf")
 
-    args_parser.add_argument("-r", "--rpc-url", dest="rpcurl", help="substrate RPC Url")
-    args_parser.add_argument("-n", "--network", dest="network", help="name of the network to connect")
-    args_parser.add_argument("-d", "--depth-eras", dest="deptheras", help="depth of eras to include")
+    args_parser.add_argument("-r", "--rpc-url", dest="rpcurl", help="Defines Substrate default RPC URL")
+    args_parser.add_argument("-n", "--network", dest="network", help="Defines the default name of the network to connect")
+    args_parser.add_argument("-d", "--depth-eras", dest="deptheras", help="Defines the default depth of eras to include")
 
     args_subparsers = args_parser.add_subparsers(title="Commands", help='', dest="command")
 
     args_subparser_list = args_subparsers.add_parser("list", help="list rewards")
-    args_subparser_list.add_argument("-u", "--unclaimed", dest="only_unclaimed", help='show unclaimed only', action='store_true', default=False)
+    args_subparser_list.add_argument("-u", "--unclaimed", dest="only_unclaimed", help='Show unclaimed only', action='store_true', default=False)
     args_subparser_list.add_argument("validators", nargs='*', help="", default=None)
     
     args_subparser_pay = args_subparsers.add_parser('pay', help="pay rewards")
     args_subparser_pay.add_argument("validators", nargs='*', help="", default=None)
-    args_subparser_pay.add_argument("-m", "--min-eras", dest="mineras", help="minum eras pending to pay to proceed payment")
-    args_subparser_pay.add_argument("-a", "--signing-account", dest="signingaccount", help="account used to sign requests")
-    args_subparser_pay.add_argument("-n", "--signing-mnemonic", dest="signingmnemonic", help="mnemonic to generate the signing key")
-    args_subparser_pay.add_argument("-s", "--signing-seed", dest="signingseed", help="seed to generate the signing key")
-    args_subparser_pay.add_argument("-u", "--signing-uri", dest="signinguri", help="uri to generate the signing key")
+    args_subparser_pay.add_argument("-m", "--min-eras", dest="mineras", help="Minum eras pending to pay to proceed payment")
+    args_subparser_pay.add_argument("-a", "--signing-account", dest="signingaccount", help="Account used to sign requests")
+    args_subparser_pay.add_argument("-n", "--signing-mnemonic", dest="signingmnemonic", help="Mnemonic to generate the signing key")
+    args_subparser_pay.add_argument("-s", "--signing-seed", dest="signingseed", help="Seed to generate the signing key")
+    args_subparser_pay.add_argument("-u", "--signing-uri", dest="signinguri", help="Uri to generate the signing key")
 
     args = args_parser.parse_args()
+    
+    if not args.command:
+        args_parser.print_help()
+        exit(1)
 
     try:
         config = ConfigParser()
@@ -181,14 +139,12 @@ def main():
         print(f"Unable to read config: {str(exc)}")
         exit(0)
 
-    if not args.command:
-        args_parser.print_help()
-        exit(1)
+    entries = get_entries(args, config)
 
     if args.command == 'list':
-        cmd_list(args, config)
+        cmd_list(entries)
     if args.command == 'pay':
-        cmd_pay(args, config)
+        cmd_pay(entries)
 
 
 if __name__ == '__main__':
