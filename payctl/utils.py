@@ -1,4 +1,6 @@
-from substrateinterface import Keypair
+from substrateinterface import SubstrateInterface, Keypair
+from scalecodec.type_registry import SUPPORTED_TYPE_REGISTRY_PRESETS
+from scalecodec.type_registry import load_type_registry_preset, load_type_registry_file
 
 #
 # get_config - Get a default and validator specific config elements from args and config.
@@ -288,16 +290,32 @@ def get_ss58_address_format(network):
 # get_type_preset - Gets the type preset for the network
 # 
 def get_type_preset(network):
-    supported_networks = [
-        "polkadot",
-        "kusama",
-        "rococo",
-        "westend",
-        "statemine",
-        "statemint",
-    ]
-
-    if network in supported_networks:
+    if network in SUPPORTED_TYPE_REGISTRY_PRESETS:
         return network
     else:
-        return "default"
+        return "substrate-node-template"
+
+#
+# get_substrate_interface - Defines a substrate interface based on default network
+# types or a custom types file
+# 
+def get_substrate_interface(args, config):
+    # get default type preset based on network configuration
+    network = get_config(args, config, 'network')
+    type_preset = get_type_preset(network)
+    # by default, load types from this preset
+    type_registry = load_type_registry_preset(type_preset)
+
+    # get custom types file. If defined, load types from it
+    custom_types_file = get_config(args, config, 'typesregistry')
+    if custom_types_file is not None:
+        type_registry = load_type_registry_file(custom_types_file)
+
+    substrate = SubstrateInterface(
+        url=get_config(args, config, 'rpcurl'),
+        address_type=get_ss58_address_format(network),
+        type_registry_preset=type_preset,
+        type_registry=type_registry,
+    )
+
+    return substrate

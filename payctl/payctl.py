@@ -1,19 +1,14 @@
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from collections import OrderedDict
-from substrateinterface import SubstrateInterface
 
 from .utils import *
-
 
 #
 # cmd_list - 'list' subcommand handler.
 #
 def cmd_list(args, config):
-    substrate = SubstrateInterface(
-        url=get_config(args, config, 'rpcurl'),
-        type_registry_preset=get_type_preset(get_config(args, config, 'network'))
-    )
+    substrate = get_substrate_interface(args, config)
 
     active_era = substrate.query(
         module='Staking',
@@ -47,10 +42,7 @@ def cmd_list(args, config):
 # cmd_pay - 'pay' subcommand handler.
 #
 def cmd_pay(args, config):
-    substrate = SubstrateInterface(
-        url=get_config(args, config, 'rpcurl'),
-        type_registry_preset=get_type_preset(get_config(args, config, 'network'))
-    )
+    substrate = get_substrate_interface(args, config)
 
     active_era = substrate.query(
         module='Staking',
@@ -157,6 +149,8 @@ def main():
     args_parser.add_argument("-r", "--rpc-url", dest="rpcurl", help="substrate RPC Url")
     args_parser.add_argument("-n", "--network", dest="network", help="name of the network to connect")
     args_parser.add_argument("-d", "--depth-eras", dest="deptheras", help="depth of eras to include")
+    
+    args_parser.add_argument("-f", "--types-registry-file", dest="typesregistry", help="file with the types of the network to connect")
 
     args_subparsers = args_parser.add_subparsers(title="Commands", help='', dest="command")
 
