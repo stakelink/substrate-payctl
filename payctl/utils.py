@@ -101,7 +101,7 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_uncl
     for era in eras_payment_info:
         for accountId in accounts:
             if accountId in eras_payment_info[era]:
-                if era in accounts_ledger[accountId]['claimedRewards']:
+                if era in accounts_ledger[accountId]['claimed_rewards']:
                     claimed = True
                 else:
                     claimed = False
