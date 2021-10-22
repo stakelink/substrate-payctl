@@ -110,7 +110,7 @@ def cmd_pay(args, config):
     payment_info = substrate.get_payment_info(call=call, keypair=keypair)
     account_info = get_account_info(substrate, get_config(args, config, 'signingaccount'))
 
-    expected_fees = payment_info['partial_fee']
+    expected_fees = payment_info['partialFee']
     free_balance = account_info['data']['free']
     existential_deposit = get_existential_deposit(substrate)
 
