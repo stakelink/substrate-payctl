@@ -145,7 +145,7 @@ def get_accounts_ledger(substrate, accounts):
             controller_account = substrate.query(
                 module='Staking',
                 storage_function='Bonded',
-                params=[accounts[0]]
+                params=[account]
             )
 
             ledger = substrate.query(
