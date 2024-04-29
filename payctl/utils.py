@@ -59,6 +59,26 @@ def get_eras_validator_rewards(substrate, start, end):
 
     return eras_validator_rewards
 
+#
+# get_eras_claims - Collect the ClaimedRewards for a given range of eras.
+#
+def get_eras_claims(substrate, start, end):
+    eras_claims = {}
+
+    for era in range(start, end):
+        claims = substrate.query_map(
+            module='Staking',
+            storage_function='ClaimedRewards',
+            params=[era]
+        )
+
+        # Extract the list of validators who claimed a reward in this era
+        validators = list(map(lambda x: x[0].value, claims))
+
+        eras_claims[era] = validators
+
+    return eras_claims
+
 
 #
 # get_eras_payment_info - Combine information from ErasRewardPoints and ErasValidatorReward for given
@@ -96,12 +116,15 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_uncl
     eras_payment_info_filtered = {}
 
     eras_payment_info = get_eras_payment_info(substrate, start, end)
+    # get_accounts_ledger relies on a deprecated API that may stop working at some point
     accounts_ledger = get_accounts_ledger(substrate, accounts)
+    # get_eras_claims replaces the previous call with a newer API
+    claims = get_eras_claims(substrate, start, end)
 
     for era in eras_payment_info:
         for accountId in accounts:
             if accountId in eras_payment_info[era]:
-                if era in accounts_ledger[accountId]['claimed_rewards']:
+                if era in accounts_ledger[accountId]['legacy_claimed_rewards'] or accountId in claims[era]:
                     claimed = True
                 else:
                     claimed = False
