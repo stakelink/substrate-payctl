@@ -96,59 +96,83 @@ def cmd_pay(args, config):
                 'call_args': {
                     'validator_stash': accountId,
                     'era': era,
-                }                
+                }
             })
 
-    call = substrate.compose_call(
-        call_module='Utility',
-        call_function='batch',
-        call_params={
-            'calls': payout_calls
-        }
-    )
+    # Check if batch exstrinsic is available
+    batch_is_available = substrate.get_metadata_call_function('Utility', 'batch') is not None
 
-    payment_info = substrate.get_payment_info(call=call, keypair=keypair)
-    account_info = get_account_info(substrate, get_config(args, config, 'signingaccount'))
+    # If batch extrinsic is available, we can batch all the payouts into a single extrinsic
+    if batch_is_available:
+        call = substrate.compose_call(
+            call_module='Utility',
+            call_function='batch',
+            call_params={
+                'calls': payout_calls
+            }
+        )
 
-    expected_fees = payment_info['partialFee']
-    free_balance = account_info['data']['free']
-    existential_deposit = get_existential_deposit(substrate)
+        # Reduce the list of extrinsics/calls to just the batched one
+        payout_calls = [call]
 
-    if (free_balance - expected_fees) < existential_deposit:
-        print(f"Account with not enough funds. Needed {existential_deposit + expected_fees}, but got {free_balance}")
-        return
+    # If batch extrinsic is not available, let's create a payout extrinsic for each era and for each validator
+    else:
+        payout_calls = list(map(lambda call: substrate.compose_call(
+            call_module=call['call_module'],
+            call_function=call['call_function'],
+            call_params=call['call_args']
+        ), payout_calls))
 
-    signature_payload = substrate.generate_signature_payload(
-        call=call,
-        nonce=account_info['nonce']
-    )
-    signature = keypair.sign(signature_payload)
+    for call in payout_calls:
+        payment_info = substrate.get_payment_info(call=call, keypair=keypair)
+        account_info = get_account_info(substrate, get_config(args, config, 'signingaccount'))
 
-    extrinsic = substrate.create_signed_extrinsic(
-        call=call,
-        keypair=keypair,
-        nonce=account_info['nonce'],
-        signature=signature
-    )
+        expected_fees = payment_info['partialFee']
+        free_balance = account_info['data']['free']
+        existential_deposit = get_existential_deposit(substrate)
 
-    print(
-        "Submitting batch extrinsic to claim " + 
-        f"{len(payout_calls)} rewards (in {len(eras_payment_info)} eras)"
-    )
+        if (free_balance - expected_fees) < existential_deposit:
+            print(f"Account with not enough funds. Needed {existential_deposit + expected_fees}, but got {free_balance}")
+            return
 
-    extrinsic_receipt = substrate.submit_extrinsic(
-        extrinsic=extrinsic,
-        wait_for_inclusion=True
-    )
+        signature_payload = substrate.generate_signature_payload(
+            call=call,
+            nonce=account_info['nonce']
+        )
+        signature = keypair.sign(signature_payload)
 
-    fees = extrinsic_receipt.total_fee_amount
+        extrinsic = substrate.create_signed_extrinsic(
+            call=call,
+            keypair=keypair,
+            nonce=account_info['nonce'],
+            signature=signature
+        )
 
-    print(f"\t Extrinsic hash: {extrinsic_receipt.extrinsic_hash}")
-    print(f"\t Block hash: {extrinsic_receipt.block_hash}")
-    print(f"\t Fee: {format_balance_to_symbol(substrate, fees)} ({fees})")
-    print(f"\t Status: {'ok' if extrinsic_receipt.is_success else 'error'}")
-    if not extrinsic_receipt.is_success:
-        print(f"\t Error message: {extrinsic_receipt.error_message.get('docs')}")
+        if batch_is_available:
+            print(
+                "Submitting one batch extrinsic to claim " + 
+                f"rewards (in {len(eras_payment_info)} eras)"
+            )
+        else:
+            print(
+                "Submitting single extrinsic to claim reward " +
+                f"for validator {call.value['call_args']['validator_stash']} " +
+                f"(in era {call.value['call_args']['era']})"
+            )
+
+        extrinsic_receipt = substrate.submit_extrinsic(
+            extrinsic=extrinsic,
+            wait_for_inclusion=True
+        )
+
+        fees = extrinsic_receipt.total_fee_amount
+
+        print(f"\t Extrinsic hash: {extrinsic_receipt.extrinsic_hash}")
+        print(f"\t Block hash: {extrinsic_receipt.block_hash}")
+        print(f"\t Fee: {format_balance_to_symbol(substrate, fees)} ({fees})")
+        print(f"\t Status: {'ok' if extrinsic_receipt.is_success else 'error'}")
+        if not extrinsic_receipt.is_success:
+            print(f"\t Error message: {extrinsic_receipt.error_message.get('docs')}")
 
 def main():
     args_parser = ArgumentParser(prog='payctl')
