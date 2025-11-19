@@ -124,10 +124,9 @@ def get_eras_payment_info_filtered(substrate, start, end, accounts=[], only_uncl
     for era in eras_payment_info:
         for accountId in accounts:
             if accountId in eras_payment_info[era]:
-                if era in accounts_ledger[accountId]['legacy_claimed_rewards'] or accountId in claims[era]:
-                    claimed = True
-                else:
-                    claimed = False
+                legacy_rewards = accounts_ledger.get(accountId, {}).get('legacy_claimed_rewards', [])
+                era_claims = claims.get(era, [])
+                claimed = era in legacy_rewards or accountId in era_claims
 
                 # if we only want the unclaimed rewards, skip
                 if claimed and only_unclaimed:
